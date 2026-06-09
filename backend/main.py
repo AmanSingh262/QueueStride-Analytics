@@ -43,6 +43,16 @@ app.add_middleware(
 # Mount static files
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
+@app.get("/")
+async def root():
+    return {
+        "title": "Automated Stock Monitoring API",
+        "version": "1.0.0",
+        "documentation": "/docs",
+        "health": "/health",
+        "status": "running"
+    }
+
 # Initialize systems
 cv_processor = CVProcessor()
 notification_system = NotificationSystem()
