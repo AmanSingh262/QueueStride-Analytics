@@ -118,19 +118,13 @@ function App() {
                       </ProtectedRoute>
                     }
                   >
-                    <Route index element={<Navigate to="/dashboard" />} />
-                    <Route path="dashboard" element={<Dashboard />} />
-                    <Route path="stores" element={<StoresPage />} />
-                    <Route path="cameras" element={<CamerasPage />} />
-                    <Route path="shelves" element={<ShelvesPage />} />
-                    <Route path="alerts" element={<AlertsPage />} />
-                    <Route path="analytics" element={<AnalyticsPage />} />
+                    <Route index element={<Navigate to="/live-monitoring" />} />
                     <Route path="live-monitoring" element={<LiveMonitoringPage />} />
-                    <Route path="settings" element={<SettingsPage />} />
+                    <Route path="alerts" element={<AlertsPage />} />
                   </Route>
                   
                   {/* Fallback */}
-                  <Route path="*" element={<Navigate to="/dashboard" />} />
+                  <Route path="*" element={<Navigate to="/live-monitoring" />} />
                 </Routes>
               </Router>
             </SocketProvider>

@@ -29,6 +29,75 @@ logger = logging.getLogger(__name__)
 # Create tables
 Base.metadata.create_all(bind=engine)
 
+# Seed default database data for demo and out-of-the-box working deployment
+def seed_default_data():
+    db = SessionLocal()
+    try:
+        # Check if default user exists, if not create
+        from auth import hash_password
+        admin = db.query(User).filter(User.email == "admin@example.com").first()
+        if not admin:
+            admin = User(
+                email="admin@example.com",
+                username="admin",
+                full_name="Administrator",
+                hashed_password=hash_password("admin123"),
+                role="Manager"
+            )
+            db.add(admin)
+            db.commit()
+            db.refresh(admin)
+
+        # Check if default store exists, if not create
+        store = db.query(Store).filter(Store.name == "Main Store").first()
+        if not store:
+            store = Store(
+                name="Main Store",
+                address="123 Main Street, NY",
+                phone="123-456-7890",
+                email="store@example.com",
+                owner_id=admin.id
+            )
+            db.add(store)
+            db.commit()
+            db.refresh(store)
+
+        # Check if default camera exists, if not create
+        camera = db.query(Camera).filter(Camera.name == "Webcam Monitor").first()
+        if not camera:
+            camera = Camera(
+                name="Webcam Monitor",
+                location="Main Aisle Shelves",
+                rtsp_url="0",
+                ip_address="127.0.0.1",
+                status="active",
+                store_id=store.id
+            )
+            db.add(camera)
+            db.commit()
+            db.refresh(camera)
+
+        # Check if default shelves exist, if not create
+        shelf_count = db.query(Shelf).filter(Shelf.camera_id == camera.id).count()
+        if shelf_count == 0:
+            shelves = [
+                Shelf(name="Beverage Shelf A1", camera_id=camera.id, region=[50, 60, 250, 120], product_category="Beverages", expected_stock_level="high", empty_threshold=0.15),
+                Shelf(name="Snacks Shelf A2", camera_id=camera.id, region=[340, 60, 250, 120], product_category="Snacks", expected_stock_level="high", empty_threshold=0.15),
+                Shelf(name="Cereals Shelf B1", camera_id=camera.id, region=[50, 260, 250, 120], product_category="Cereals", expected_stock_level="high", empty_threshold=0.15),
+                Shelf(name="Canned Food Shelf B2", camera_id=camera.id, region=[340, 260, 250, 120], product_category="Canned Goods", expected_stock_level="high", empty_threshold=0.15),
+            ]
+            db.add_all(shelves)
+            db.commit()
+            logger.info("Database successfully seeded with default Store, Camera, and Shelves!")
+    except Exception as e:
+        logger.error(f"Error seeding database: {str(e)}")
+    finally:
+        db.close()
+
+# Import SessionLocal to perform seeding
+from database import SessionLocal
+seed_default_data()
+
 app = FastAPI(title="Automated Stock Monitoring API", version="1.0.0")
 
 # CORS middleware

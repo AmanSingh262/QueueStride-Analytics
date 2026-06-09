@@ -40,14 +40,8 @@ import { useSocket } from '../contexts/SocketContext';
 const drawerWidth = 240;
 
 const menuItems = [
-  { text: 'Dashboard', icon: <Dashboard />, path: '/dashboard' },
-  { text: 'Stores', icon: <Store />, path: '/stores' },
-  { text: 'Cameras', icon: <Videocam />, path: '/cameras' },
-  { text: 'Shelves', icon: <Inventory />, path: '/shelves' },
-  { text: 'Alerts', icon: <NotificationsActive />, path: '/alerts' },
-  { text: 'Analytics', icon: <Analytics />, path: '/analytics' },
   { text: 'Live Monitoring', icon: <LiveTv />, path: '/live-monitoring' },
-  { text: 'Settings', icon: <Settings />, path: '/settings' },
+  { text: 'Alerts', icon: <NotificationsActive />, path: '/alerts' },
 ];
 
 export default function Layout() {
