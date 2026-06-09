@@ -262,6 +262,28 @@ async def create_shelf(shelf: ShelfCreate, db: Session = Depends(get_db), curren
     db.refresh(db_shelf)
     return db_shelf
 
+@app.put("/api/shelves/{shelf_id}", response_model=ShelfResponse)
+async def update_shelf(shelf_id: int, shelf: ShelfCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    # Verify shelf exists and user owns the camera
+    db_shelf = db.query(Shelf).join(Camera).join(Store).filter(
+        Shelf.id == shelf_id,
+        Store.owner_id == current_user.id
+    ).first()
+    if not db_shelf:
+        raise HTTPException(status_code=404, detail="Shelf not found")
+    
+    # Update fields
+    db_shelf.name = shelf.name
+    db_shelf.region = shelf.region
+    db_shelf.product_category = shelf.product_category
+    db_shelf.expected_stock_level = shelf.expected_stock_level
+    db_shelf.empty_threshold = shelf.empty_threshold
+    db_shelf.camera_id = shelf.camera_id
+    
+    db.commit()
+    db.refresh(db_shelf)
+    return db_shelf
+
 @app.get("/api/shelves", response_model=List[ShelfResponse])
 async def get_shelves(camera_id: Optional[str] = None, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     query = db.query(Shelf).join(Camera).join(Store).filter(Store.owner_id == current_user.id)

@@ -14,6 +14,54 @@ class CVProcessor:
         self.alert_cooldown = {}
         self.alert_duration = 300  # 5 minutes
         
+        # Initialize YOLOv8
+        self.yolo_enabled = False
+        try:
+            from ultralytics import YOLO
+            # Load yolov8n model (downloads automatically if not locally cached)
+            self.model = YOLO('yolov8n.pt')
+            self.yolo_enabled = True
+            logger.info("YOLOv8 initialized successfully.")
+        except Exception as e:
+            logger.error(f"Failed to initialize YOLOv8: {str(e)}. Falling back to traditional CV.")
+
+        # Mapping COCO dataset classes to store product terms
+        self.coco_to_store_map = {
+            'bottle': 'Beverage',
+            'wine glass': 'Beverage',
+            'cup': 'Beverage',
+            'handbag': 'Chips Packet/Bag',
+            'backpack': 'Chips Packet/Bag',
+            'sandwich': 'Snack/Food',
+            'banana': 'Snack/Food',
+            'apple': 'Snack/Food',
+            'orange': 'Snack/Food',
+            'broccoli': 'Snack/Food',
+            'carrot': 'Snack/Food',
+            'hot dog': 'Snack/Food',
+            'pizza': 'Snack/Food',
+            'donut': 'Snack/Food',
+            'cake': 'Snack/Food',
+            'book': 'Boxed Item',
+            'cell phone': 'Boxed Item',
+            'toothbrush': 'Product',
+            'clock': 'Product',
+            'vase': 'Product',
+            'scissors': 'Product',
+            'teddy bear': 'Product',
+            'hair drier': 'Product'
+        }
+
+        # Background or non-product classes to exclude
+        self.excluded_classes = {
+            'person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus', 'train', 'truck', 'boat',
+            'traffic light', 'fire hydrant', 'stop sign', 'parking meter', 'bench', 'cat', 'dog', 'horse',
+            'sheep', 'cow', 'elephant', 'bear', 'zebra', 'giraffe', 'tie', 'suitcase', 'frisbee', 'skis',
+            'snowboard', 'sports ball', 'kite', 'baseball bat', 'baseball glove', 'skateboard', 'surfboard',
+            'tennis racket', 'chair', 'couch', 'potted plant', 'bed', 'dining table', 'toilet', 'tv', 'laptop',
+            'mouse', 'remote', 'keyboard', 'microwave', 'oven', 'toaster', 'sink', 'refrigerator'
+        }
+        
     def detect_shelves(self, frame: np.ndarray) -> List[Dict[str, Any]]:
         """Automatically detect shelf regions using edge detection and contours"""
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -64,7 +112,6 @@ class CVProcessor:
         
         # Convert to different color spaces for analysis
         gray_roi = cv2.cvtColor(shelf_roi, cv2.COLOR_BGR2GRAY)
-        hsv_roi = cv2.cvtColor(shelf_roi, cv2.COLOR_BGR2HSV)
         
         # Method 1: Edge density analysis
         edges = cv2.Canny(gray_roi, 50, 150)
@@ -129,13 +176,60 @@ class CVProcessor:
         return True
     
     def process_frame(self, frame: np.ndarray, shelves: List[Any]) -> List[Dict[str, Any]]:
-        """Process a frame and analyze all shelves"""
+        """Process a frame and analyze all shelves using YOLOv8 and traditional CV"""
         results = []
+        
+        # Run YOLOv8 on the whole frame first
+        yolo_detections = []
+        if self.yolo_enabled:
+            try:
+                yolo_results = self.model(frame, verbose=False)
+                for r in yolo_results:
+                    boxes = r.boxes
+                    for box in boxes:
+                        x1, y1, x2, y2 = box.xyxy[0].tolist()
+                        conf = float(box.conf[0])
+                        cls_id = int(box.cls[0])
+                        cls_name = self.model.names[cls_id]
+                        
+                        if cls_name not in self.excluded_classes and conf > 0.25:
+                            yolo_detections.append({
+                                'box': [x1, y1, x2 - x1, y2 - y1],
+                                'center': [(x1 + x2) / 2, (y1 + y2) / 2],
+                                'class_name': cls_name,
+                                'confidence': conf,
+                                'display_name': self.coco_to_store_map.get(cls_name, cls_name.capitalize())
+                            })
+            except Exception as e:
+                logger.error(f"YOLOv8 inference error: {str(e)}")
         
         for shelf in shelves:
             try:
                 shelf_region = shelf.region
-                occupancy_score = self.analyze_shelf_occupancy(frame, shelf_region)
+                sx, sy, sw, sh = shelf_region
+                
+                # Check which YOLO detections are on this shelf
+                shelf_products = []
+                for det in yolo_detections:
+                    cx, cy = det['center']
+                    # Check if center point of the object is within the shelf bounding box
+                    if sx <= cx <= sx + sw and sy <= cy <= sy + sh:
+                        shelf_products.append(det)
+                
+                num_products = len(shelf_products)
+                traditional_occupancy = self.analyze_shelf_occupancy(frame, shelf_region)
+                
+                if self.yolo_enabled:
+                    if num_products > 0:
+                        # YOLO occupancy starts at 0.5 and increases with count
+                        yolo_occupancy = min(0.5 + 0.25 * num_products, 1.0)
+                        occupancy_score = max(yolo_occupancy, traditional_occupancy)
+                    else:
+                        # If YOLO doesn't detect specific class, use traditional CV
+                        occupancy_score = traditional_occupancy
+                else:
+                    occupancy_score = traditional_occupancy
+                
                 stock_level = self.classify_stock_level(occupancy_score, shelf.empty_threshold)
                 
                 # Determine if alert is needed
@@ -163,7 +257,8 @@ class CVProcessor:
                     'needs_alert': needs_alert,
                     'priority': priority,
                     'message': message,
-                    'region': shelf_region
+                    'region': shelf_region,
+                    'detected_items': [p['display_name'] for p in shelf_products]
                 }
                 
                 results.append(result)
@@ -179,7 +274,8 @@ class CVProcessor:
                     'needs_alert': False,
                     'priority': 'LOW',
                     'message': f"Error processing {shelf.name}",
-                    'region': shelf.region
+                    'region': shelf.region,
+                    'detected_items': []
                 })
         
         return results
@@ -219,5 +315,12 @@ class CVProcessor:
             score_text = f"{result['occupancy_score']:.3f}"
             cv2.putText(overlay_frame, score_text, (x, y + h + 15), 
                        cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
+            
+            # Draw detected items
+            detected_items = result.get('detected_items', [])
+            if detected_items:
+                items_label = f"Items: {', '.join(detected_items)}"
+                cv2.putText(overlay_frame, items_label, (x, y + h + 30), 
+                           cv2.FONT_HERSHEY_SIMPLEX, 0.4, color, 1)
         
         return overlay_frame
