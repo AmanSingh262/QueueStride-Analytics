@@ -1,5 +1,4 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { io } from 'socket.io-client';
 import { useAuth } from './AuthContext';
 import { useSnackbar } from 'notistack';
 
@@ -22,35 +21,73 @@ export const SocketProvider = ({ children }) => {
 
   useEffect(() => {
     if (user && token) {
-      // Initialize WebSocket connection
+      // Initialize native WebSocket connection
       const apiURL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
-      const socketURL = apiURL.replace(/^http/, 'ws');
-      const newSocket = io(socketURL, {
-        auth: {
-          token: token,
+      // If apiURL is '/' (relative path), construct the websocket URL relative to the window location
+      const baseSocketURL = apiURL === '/' 
+        ? `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`
+        : apiURL.replace(/^http/, 'ws');
+        
+      const socketURL = `${baseSocketURL}/ws`;
+      
+      console.log('Connecting to WebSocket:', socketURL);
+      const ws = new WebSocket(socketURL);
+      
+      // Store event listeners
+      const listeners = {};
+      
+      const mockSocket = {
+        on: (event, callback) => {
+          if (!listeners[event]) {
+            listeners[event] = [];
+          }
+          listeners[event].push(callback);
         },
-        transports: ['websocket'],
-      });
+        emit: (event, data) => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ event, data }));
+          }
+        },
+        close: () => {
+          ws.close();
+        }
+      };
 
-      newSocket.on('connect', () => {
+      ws.onopen = () => {
         console.log('WebSocket connected');
         setConnected(true);
-      });
+        if (listeners['connect']) {
+          listeners['connect'].forEach(cb => cb());
+        }
+      };
 
-      newSocket.on('disconnect', () => {
+      ws.onclose = () => {
         console.log('WebSocket disconnected');
         setConnected(false);
-      });
+        if (listeners['disconnect']) {
+          listeners['disconnect'].forEach(cb => cb());
+        }
+      };
 
-      newSocket.on('alert', (alertData) => {
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          // Standard FastAPI WebSocket alerts send JSON like {"type": "alert", ...}
+          // We trigger callbacks registered under the event name (e.g. data.type)
+          if (data && data.type && listeners[data.type]) {
+            listeners[data.type].forEach(cb => cb(data));
+          }
+        } catch (e) {
+          console.error("Failed to parse WebSocket message:", e);
+        }
+      };
+
+      // Register callbacks defined below
+      mockSocket.on('alert', (alertData) => {
         console.log('New alert received:', alertData);
-        
-        // Add alert to state
-        setAlerts(prev => [alertData, ...prev.slice(0, 99)]); // Keep last 100 alerts
-        
-        // Show notification
+        setAlerts(prev => [alertData, ...prev.slice(0, 99)]);
         enqueueSnackbar(
-          `${alertData.title}: ${alertData.message}`,
+          `${alertData.title || 'Stock Alert'}: ${alertData.message}`,
           {
             variant: alertData.priority === 'HIGH' ? 'error' : 'warning',
             autoHideDuration: alertData.priority === 'HIGH' ? 10000 : 5000,
@@ -58,20 +95,18 @@ export const SocketProvider = ({ children }) => {
         );
       });
 
-      newSocket.on('camera_status', (data) => {
+      mockSocket.on('camera_status', (data) => {
         console.log('Camera status update:', data);
-        // Handle camera status updates
       });
 
-      newSocket.on('shelf_status', (data) => {
+      mockSocket.on('shelf_status', (data) => {
         console.log('Shelf status update:', data);
-        // Handle shelf status updates
       });
 
-      setSocket(newSocket);
+      setSocket(mockSocket);
 
       return () => {
-        newSocket.close();
+        ws.close();
       };
     }
   }, [user, token, enqueueSnackbar]);
