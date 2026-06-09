@@ -211,10 +211,14 @@ async def create_camera(camera: CameraCreate, db: Session = Depends(get_db), cur
     return db_camera
 
 @app.get("/api/cameras", response_model=List[CameraResponse])
-async def get_cameras(store_id: Optional[int] = None, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def get_cameras(store_id: Optional[str] = None, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     query = db.query(Camera).join(Store).filter(Store.owner_id == current_user.id)
-    if store_id:
-        query = query.filter(Camera.store_id == store_id)
+    if store_id and store_id != "" and store_id != "undefined":
+        try:
+            store_id_int = int(store_id)
+            query = query.filter(Camera.store_id == store_id_int)
+        except ValueError:
+            pass
     cameras = query.all()
     return cameras
 
@@ -259,10 +263,14 @@ async def create_shelf(shelf: ShelfCreate, db: Session = Depends(get_db), curren
     return db_shelf
 
 @app.get("/api/shelves", response_model=List[ShelfResponse])
-async def get_shelves(camera_id: Optional[int] = None, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def get_shelves(camera_id: Optional[str] = None, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     query = db.query(Shelf).join(Camera).join(Store).filter(Store.owner_id == current_user.id)
-    if camera_id:
-        query = query.filter(Shelf.camera_id == camera_id)
+    if camera_id and camera_id != "" and camera_id != "undefined":
+        try:
+            camera_id_int = int(camera_id)
+            query = query.filter(Shelf.camera_id == camera_id_int)
+        except ValueError:
+            pass
     shelves = query.all()
     return shelves
 
@@ -284,15 +292,19 @@ async def delete_shelf(shelf_id: int, db: Session = Depends(get_db), current_use
 async def get_alerts(
     skip: int = 0, 
     limit: int = 100, 
-    shelf_id: Optional[int] = None,
+    shelf_id: Optional[str] = None,
     priority: Optional[str] = None,
     db: Session = Depends(get_db), 
     current_user: User = Depends(get_current_user)
 ):
     query = db.query(Alert).join(Shelf).join(Camera).join(Store).filter(Store.owner_id == current_user.id)
     
-    if shelf_id:
-        query = query.filter(Alert.shelf_id == shelf_id)
+    if shelf_id and shelf_id != "" and shelf_id != "undefined":
+        try:
+            shelf_id_int = int(shelf_id)
+            query = query.filter(Alert.shelf_id == shelf_id_int)
+        except ValueError:
+            pass
     if priority:
         query = query.filter(Alert.priority == priority)
     
