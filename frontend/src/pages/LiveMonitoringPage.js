@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import {
   Container,
   Paper,
@@ -73,12 +73,40 @@ const LiveMonitoringPage = () => {
     }
   );
 
+  // Fallback to a default camera list if backend returns empty or fails
+  const camerasList = useMemo(() => {
+    return (cameras && cameras.length > 0)
+      ? cameras
+      : [{ id: 1, name: 'Webcam Monitor', location: 'Main Aisle Shelves' }];
+  }, [cameras]);
+
   // Automatically select the first camera when loaded
   useEffect(() => {
-    if (cameras && cameras.length > 0 && !selectedCamera) {
-      setSelectedCamera(cameras[0].id);
+    if (camerasList && camerasList.length > 0 && !selectedCamera) {
+      setSelectedCamera(String(camerasList[0].id));
     }
-  }, [cameras, selectedCamera]);
+  }, [camerasList, selectedCamera]);
+
+  // Call the backend API to process a single frame
+  const processFrame = useCallback(async (imageFile) => {
+    let cameraId = selectedCamera;
+    if (!cameraId && camerasList && camerasList.length > 0) {
+      cameraId = camerasList[0].id;
+    }
+    if (!cameraId) {
+      cameraId = 1; // Fallback
+    }
+
+    setProcessing(true);
+    try {
+      const response = await cvService.processFrame(cameraId, imageFile);
+      setAnalysisResults(response.data.results || []);
+    } catch (error) {
+      console.error('Error processing frame:', error);
+    } finally {
+      setProcessing(false);
+    }
+  }, [selectedCamera, camerasList]);
 
   // Handle file drops (Images or Videos)
   const onDrop = useCallback((acceptedFiles) => {
@@ -99,7 +127,7 @@ const LiveMonitoringPage = () => {
         reader.readAsDataURL(file);
       }
     }
-  }, [selectedCamera]);
+  }, [processFrame]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -110,26 +138,15 @@ const LiveMonitoringPage = () => {
     multiple: false,
   });
 
-  // Call the backend API to process a single frame
-  const processFrame = async (imageFile) => {
-    if (!selectedCamera) {
-      return;
-    }
-
-    setProcessing(true);
-    try {
-      const response = await cvService.processFrame(selectedCamera, imageFile);
-      setAnalysisResults(response.data.results || []);
-    } catch (error) {
-      console.error('Error processing frame:', error);
-    } finally {
-      setProcessing(false);
-    }
-  };
-
   // Capture frame from Webcam or Video element and send to backend
   const captureFrame = useCallback(() => {
-    if (!selectedCamera) return;
+    let cameraId = selectedCamera;
+    if (!cameraId && camerasList && camerasList.length > 0) {
+      cameraId = camerasList[0].id;
+    }
+    if (!cameraId) {
+      cameraId = 1; // Fallback
+    }
 
     if (useWebcam && webcamRef.current) {
       const imageSrc = webcamRef.current.getScreenshot();
@@ -163,7 +180,7 @@ const LiveMonitoringPage = () => {
         }, 'image/jpeg');
       }
     }
-  }, [useWebcam, webcamRef, isVideoFile, videoRef, selectedCamera]);
+  }, [useWebcam, webcamRef, isVideoFile, videoRef, selectedCamera, camerasList, processFrame]);
 
   // Set up periodic monitoring loop (every 3 seconds) when streaming is active
   useEffect(() => {
@@ -191,9 +208,17 @@ const LiveMonitoringPage = () => {
   };
 
   const autoDetectShelves = async () => {
-    if (!currentFrame || !selectedCamera) {
-      alert('Please capture a frame and select a camera first');
+    if (!currentFrame) {
+      alert('Please capture or upload a frame first');
       return;
+    }
+
+    let cameraId = selectedCamera;
+    if (!cameraId && camerasList && camerasList.length > 0) {
+      cameraId = camerasList[0].id;
+    }
+    if (!cameraId) {
+      cameraId = 1; // Fallback
     }
 
     setProcessing(true);
@@ -201,7 +226,7 @@ const LiveMonitoringPage = () => {
       const blob = await fetch(currentFrame).then(res => res.blob());
       const file = new File([blob], 'frame.jpg', { type: 'image/jpeg' });
       
-      const response = await cvService.detectShelves(selectedCamera, file);
+      const response = await cvService.detectShelves(cameraId, file);
       alert(`Detected ${response.data.detected_shelves.length} potential shelves. Regions will now be updated.`);
     } catch (error) {
       console.error('Error detecting shelves:', error);
@@ -292,10 +317,18 @@ const LiveMonitoringPage = () => {
     
     const region = [x, y, w, h];
     
+    let cameraId = selectedCamera;
+    if (!cameraId && camerasList && camerasList.length > 0) {
+      cameraId = camerasList[0].id;
+    }
+    if (!cameraId) {
+      cameraId = 1; // Fallback
+    }
+
     setProcessing(true);
     try {
       await shelfService.createShelf({
-        camera_id: selectedCamera,
+        camera_id: cameraId,
         name: newShelfName,
         region: region,
         product_category: newShelfCategory,
@@ -449,14 +482,15 @@ const LiveMonitoringPage = () => {
             </Typography>
             
             <FormControl fullWidth sx={{ mb: 2 }}>
-              <InputLabel>Active AI Camera</InputLabel>
+              <InputLabel id="active-camera-label">Active AI Camera</InputLabel>
               <Select
-                value={selectedCamera}
+                labelId="active-camera-label"
+                value={selectedCamera ? String(selectedCamera) : ''}
                 onChange={(e) => setSelectedCamera(e.target.value)}
                 label="Active AI Camera"
               >
-                {cameras?.map((camera) => (
-                  <MenuItem key={camera.id} value={camera.id}>
+                {camerasList.map((camera) => (
+                  <MenuItem key={camera.id} value={String(camera.id)}>
                     {camera.name} ({camera.location})
                   </MenuItem>
                 ))}
@@ -497,7 +531,7 @@ const LiveMonitoringPage = () => {
                 color={isStreaming ? 'error' : 'success'}
                 onClick={isStreaming ? stopStreaming : startStreaming}
                 startIcon={isStreaming ? <Pause /> : <PlayArrow />}
-                disabled={!selectedCamera}
+                disabled={!selectedCamera && camerasList.length === 0}
                 fullWidth
               >
                 {isStreaming ? 'Stop AI Monitor' : 'Start AI Monitor'}
@@ -514,7 +548,7 @@ const LiveMonitoringPage = () => {
                   setCurrentRect(null);
                 }}
                 startIcon={<Gesture />}
-                disabled={!selectedCamera || !currentFrame}
+                disabled={(!selectedCamera && camerasList.length === 0) || !currentFrame}
                 fullWidth
                 sx={{
                   borderStyle: drawingMode ? 'solid' : 'dashed',
