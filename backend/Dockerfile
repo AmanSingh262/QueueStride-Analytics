@@ -22,8 +22,8 @@ RUN pip install --no-cache-dir torch torchvision --index-url https://download.py
 # Copy application code
 COPY . .
 
-# Pre-download YOLOv8 model to avoid runtime download issues / timeouts
-RUN python -c "from ultralytics import YOLO, settings; settings.update({'sync': False}); YOLO('yolov8n.pt')"
+# Pre-download YOLOv8 model directly via urllib to avoid loading PyTorch during build (which can cause build OOM failures)
+RUN python -c "import urllib.request; urllib.request.urlretrieve('https://github.com/ultralytics/assets/releases/download/v8.2.0/yolov8n.pt', 'yolov8n.pt')"
 
 # Create necessary directories
 RUN mkdir -p static logs
