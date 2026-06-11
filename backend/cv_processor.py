@@ -17,13 +17,21 @@ class CVProcessor:
         # Initialize YOLOv8
         self.yolo_enabled = False
         try:
-            from ultralytics import YOLO
-            # Load yolov8n model (downloads automatically if not locally cached)
+            from ultralytics import YOLO, settings
+            # Disable telemetry, sync, and update checks for faster/offline startup
+            settings.update({"sync": False, "check": False})
+            
+            # Load yolov8n model
+            import os
+            model_path = os.path.abspath('yolov8n.pt')
+            logger.info(f"Loading YOLOv8 model from: {model_path}")
+            
             self.model = YOLO('yolov8n.pt')
             self.yolo_enabled = True
             logger.info("YOLOv8 initialized successfully.")
         except Exception as e:
-            logger.error(f"Failed to initialize YOLOv8: {str(e)}. Falling back to traditional CV.")
+            import traceback
+            logger.error(f"Failed to initialize YOLOv8: {str(e)}. Falling back to traditional CV.\nTraceback:\n{traceback.format_exc()}")
 
         # Mapping COCO dataset classes to store product terms
         self.coco_to_store_map = {

@@ -62,6 +62,12 @@ const LiveMonitoringPage = () => {
   const webcamRef = useRef(null);
   const videoRef = useRef(null);
   const containerRef = useRef(null); // Reference to scale canvas coordinates
+  const processingRef = useRef(false);
+
+  useEffect(() => {
+    processingRef.current = processing;
+  }, [processing]);
+
   const { connected } = useSocket();
 
   // Fetch cameras from backend
@@ -140,6 +146,10 @@ const LiveMonitoringPage = () => {
 
   // Capture frame from Webcam or Video element and send to backend
   const captureFrame = useCallback(() => {
+    if (processingRef.current) {
+      console.log('Skipping frame capture: previous frame is still processing.');
+      return;
+    }
     let cameraId = selectedCamera;
     if (!cameraId && camerasList && camerasList.length > 0) {
       cameraId = camerasList[0].id;

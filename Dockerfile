@@ -15,6 +15,8 @@ RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
     libpq-dev \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -32,6 +34,9 @@ COPY --from=frontend-builder /app/frontend/build ./backend/frontend_build
 
 # Set working directory to backend so Python imports resolve correctly
 WORKDIR /app/backend
+
+# Pre-download YOLOv8 model to avoid runtime download issues / timeouts
+RUN python -c "from ultralytics import YOLO, settings; settings.update({'sync': False}); YOLO('yolov8n.pt')"
 
 # Create necessary directories
 RUN mkdir -p static logs
